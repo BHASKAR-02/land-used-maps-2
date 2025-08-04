@@ -165,25 +165,36 @@
             document.getElementById('loading').style.display = 'none';
         }
 
-        // Load a single chunk
+        // Enhanced load chunk function with detailed logging
         async function loadChunk(url, index) {
-            if (loadedChunks.has(index) || isLoading) {
+            if (loadedChunks.has(index)) {
+                console.log(`Chunk ${index} already loaded, skipping`);
                 return;
             }
 
-            console.log(`Loading chunk ${index + 1}/${chunkUrls.length}`);
+            console.log(`Attempting to load chunk ${index + 1}/${chunkUrls.length} from: ${url}`);
             
             try {
+                console.log(`Fetching: ${url}`);
                 const response = await fetch(url);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                console.log(`Response received for chunk ${index}, status: ${response.status}`);
                 const data = await response.json();
+                console.log(`Data parsed for chunk ${index}, features: ${data.features?.length || 0}`);
                 
                 if (data.features && data.features.length > 0) {
                     // Transform coordinates for each feature
                     data.features.forEach(feature => {
-                        if (feature.geometry.type === 'Polygon') {
-                            feature.geometry.coordinates = transformCoordinates(feature.geometry.coordinates);
-                        } else if (feature.geometry.type === 'MultiPolygon') {
-                            feature.geometry.coordinates = transformCoordinates(feature.geometry.coordinates);
+                        if (feature.geometry && feature.geometry.coordinates) {
+                            if (feature.geometry.type === 'Polygon') {
+                                feature.geometry.coordinates = transformCoordinates(feature.geometry.coordinates);
+                            } else if (feature.geometry.type === 'MultiPolygon') {
+                                feature.geometry.coordinates = transformCoordinates(feature.geometry.coordinates);
+                            }
                         }
                     });
 
@@ -202,37 +213,96 @@
                     chunkLayers.set(index, geoJsonLayer);
                     loadedChunks.add(index);
                     
-                    console.log(`Chunk ${index + 1} loaded: ${data.features.length} features`);
+                    console.log('Chunk ${index + 1} loaded successfully: ${data.features.length} features`);
+                } else {
+                    console.log(`Chunk ${index + 1} has no features`);
                 }
             } catch (error) {
-                console.error(`Error loading chunk ${index}:`, error);
+                console.error(`Error loading chunk ${index + 1}:`, error);
+                console.error(`URL: ${url}`);
+                console.error(`Error details:`, error.message);
             }
             
             updateChunkInfo();
         }
 
-        // Load chunks in batches based on priority
+        // Enhanced batch loading with better error handling
         async function loadChunksBatch(chunkIndices, batchSize = 3) {
-            if (isLoading) return;
+            if (isLoading) {
+                console.log("Already loading, skipping batch");
+                return;
+            }
             
             isLoading = true;
             showLoading();
             
+            console.log(`Loading batch of ${chunkIndices.length} chunks`);
+            
             // Process in batches to avoid overwhelming the browser
             for (let i = 0; i < chunkIndices.length; i += batchSize) {
                 const batch = chunkIndices.slice(i, i + batchSize);
+                console.log(`Processing batch ${Math.floor(i/batchSize) + 1}, indices:`, batch);
+                
                 const promises = batch
                     .filter(index => !loadedChunks.has(index))
-                    .map(index => loadChunk(chunkUrls[index], index));
+                    .map(index => {
+                        console.log(`Creating promise for chunk ${index}`);
+                        return loadChunk(chunkUrls[index], index);
+                    });
                 
-                await Promise.all(promises);
+                if (promises.length > 0) {
+                    console.log(`Executing ${promises.length} promises`);
+                    await Promise.allSettled(promises); // Use allSettled instead of all
+                }
                 
                 // Small delay between batches to keep UI responsive
-                await new Promise(resolve => setTimeout(resolve, 100));
+                await new Promise(resolve => setTimeout(resolve, 200));
             }
             
             isLoading = false;
             hideLoading();
+            console.log(`Batch loading complete. Total loaded: ${loadedChunks.size}`);
+        }
+
+        // Test chunk URLs for accessibility
+        async function testChunkUrls() {
+            console.log("Testing first few chunk URLs...");
+            
+            for (let i = 0; i < Math.min(3, chunkUrls.length); i++) {
+                const url = chunkUrls[i];
+                try {
+                    console.log(`Testing URL: ${url}`);
+                    const response = await fetch(url, { method: 'HEAD' });
+                    console.log(`URL ${i}: ${response.status} ${response.statusText}`);
+                } catch (error) {
+                    console.error(`URL ${i} failed:`, error.message);
+                }
+            }
+        }
+
+        // Manual URL test function
+        function manualUrlTest() {
+            const testUrl = "https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_0.geojson";
+            console.log("Manual URL test:", testUrl);
+            
+            fetch(testUrl)
+                .then(response => {
+                    console.log("Manual test response:", response.status, response.statusText);
+                    return response.text();
+                })
+                .then(text => {
+                    console.log("Manual test response text length:", text.length);
+                    console.log("First 200 characters:", text.substring(0, 200));
+                    try {
+                        JSON.parse(text);
+                        console.log("JSON is valid");
+                    } catch (e) {
+                        console.error("JSON is invalid:", e.message);
+                    }
+                })
+                .catch(error => {
+                    console.error("Manual test error:", error);
+                });
         }
 
         // Determine which chunks to load based on map view and zoom
@@ -256,10 +326,9 @@
             return chunksToLoad;
         }
 
-        // Simplified bounds checking (you can enhance this based on your data's geographic extent)
+        // Simplified bounds checking
         function getChunksInBounds(bounds) {
             // Since we don't know exact chunk bounds, load progressively
-            // This is a simplified approach - you could enhance this with actual chunk bounds
             const totalChunks = chunkUrls.length;
             const maxChunks = Math.min(40, totalChunks);
             return Array.from({length: maxChunks}, (_, i) => i);
@@ -268,6 +337,7 @@
         // Load initial chunks
         function loadInitialChunks() {
             const initialChunks = getRelevantChunks();
+            console.log("Loading initial chunks:", initialChunks);
             loadChunksBatch(initialChunks);
         }
 
@@ -277,6 +347,7 @@
             const unloadedChunks = newChunks.filter(i => !loadedChunks.has(i));
             
             if (unloadedChunks.length > 0) {
+                console.log("Zoom changed, loading new chunks:", unloadedChunks);
                 loadChunksBatch(unloadedChunks);
             }
         });
@@ -288,6 +359,7 @@
                 const unloadedChunks = newChunks.filter(i => !loadedChunks.has(i));
                 
                 if (unloadedChunks.length > 0 && unloadedChunks.length <= 10) {
+                    console.log("Map moved, loading new chunks:", unloadedChunks);
                     loadChunksBatch(unloadedChunks, 2); // Smaller batches for move events
                 }
             }
@@ -308,16 +380,33 @@
         }
 
         // Initialize everything
+        console.log('Map initialized. Dynamic chunk loading enabled.');
+        console.log(`Total chunks available: ${chunkUrls.length}`);
+        
         generateLegend();
         updateChunkInfo();
 
-        // Start loading chunks after a short delay to let the map initialize
-        setTimeout(() => {
-            loadInitialChunks();
-        }, 500);
+        // Call manual URL test immediately
+        manualUrlTest();
 
-        console.log('Map initialized. Dynamic chunk loading enabled.');
-        console.log(`Total chunks available: ${chunkUrls.length}`);
+        // Test URLs first, then load chunks
+        setTimeout(async () => {
+            await testChunkUrls();
+            
+            // Try loading just the first chunk to test
+            console.log("Testing single chunk load...");
+            await loadChunk(chunkUrls[0], 0);
+            
+            // If successful, load more
+            if (loadedChunks.size > 0) {
+                console.log("Single chunk test successful, loading more...");
+                loadInitialChunks();
+            } else {
+                console.error("Single chunk test failed, check URLs and CORS policy");
+                console.log("Attempting to load initial chunks anyway...");
+                loadInitialChunks();
+            }
+        }, 1000);
     </script>
 </body>
 </html>
