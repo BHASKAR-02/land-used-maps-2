@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Land Use Map</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <style>
+        #map { 
+            height: 600px; 
+            width: 100%;
+        }
+        .legend { 
+            background: white; 
+            padding: 10px; 
+            border: 2px solid grey; 
+            border-radius: 5px;
+            position: fixed; 
+            bottom: 50px; 
+            left: 50px; 
+            max-height: 400px;
+            overflow-y: auto;
+            z-index: 1000; 
+            font-size: 12px;
+            min-width: 200px;
+        }
+        .legend-item {
+            margin: 2px 0;
+            display: flex;
+            align-items: center;
+        }
+        .legend-color {
+            width: 15px;
+            height: 15px;
+            margin-right: 8px;
+            border: 1px solid #ccc;
+            flex-shrink: 0;
+        }
+        .legend-text {
+            word-wrap: break-word;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div class="legend">
+        <b>HILUCS Categories</b>
+        <div id="legend-items"></div>
+    </div>
+
+    <script>
+        const colorMap = {
+            "AbandonedAreas": "#1f77b4",
+            "Agriculture": "#aec7e8",
+            "AquacultureAndFishing": "#ff7f0e",
+            "CommercialServices": "#ffbb78",
+            "CommunityServices": "#2ca02c",
+            "CulturalEntertainmentAndRecreationalServices": "#98df8a",
+            "Forestry": "#d62728",
+            "LandAreasNotInOtherEconomicUse": "#ff9896",
+            "MiningAndQuarrying": "#9467bd",
+            "NotKnownUse": "#c5b0d5",
+            "ResidentialUse": "#8c564b",
+            "SecondaryProduction": "#c49c94",
+            "TransitionalAreas": "#e377c2",
+            "TransportNetworks": "#f7b6d2",
+            "Utilities": "#7f7f7f",
+            "WaterAreasNotInOtherEconomicUse": "#c7c7c7"
+        };
+
+        // Initialize map
+        const map = L.map('map').setView([40.0, -3.0], 12); // Update coordinates
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        // Chunk URLs - update with your actual URLs
+        const chunkUrls = [
+            'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_0.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_1.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_2.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_3.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_4.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_5.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_6.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_7.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_8.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_9.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_10.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_11.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_12.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_13.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_14.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_15.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_16.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_17.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_18.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_19.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_20.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_21.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_22.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_23.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_24.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_25.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_26.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_27.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_28.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_29.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_30.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_31.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_32.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_33.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_34.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_35.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_36.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_37.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_38.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_39.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_40.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_41.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_42.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_43.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_44.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_45.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_46.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_47.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_48.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_49.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_50.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_51.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_52.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_53.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_54.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_55.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_56.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_57.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_58.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_59.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_60.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_61.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_62.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_63.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_64.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_65.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_66.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_67.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_68.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_69.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_70.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_71.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_72.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_73.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_74.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_75.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_76.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_77.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_78.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_79.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_80.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_81.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_82.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_83.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_84.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_85.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_86.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_87.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_88.geojson',
+       'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_89.geojson'
+        ];
+
+        // Style function
+        function getStyle(feature) {
+            const category = feature.properties.HILUCS_DESC;
+            return {
+                fillColor: colorMap[category] || '#999999',
+                color: 'black',
+                weight: 0.5,
+                fillOpacity: 0.7,
+                opacity: 1
+            };
+        }
+
+        // Load chunks progressively
+        let loadedChunks = 0;
+        const totalChunks = chunkUrls.length;
+
+        chunkUrls.forEach((url, index) => {
+            fetch(url)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    L.geoJSON(data, {
+                        style: getStyle,
+                        onEachFeature: function(feature, layer) {
+                            const category = feature.properties.HILUCS_DESC;
+                            layer.bindTooltip(`<b>HILUCS:</b> ${category}`, {
+                                sticky: true,
+                                className: 'custom-tooltip'
+                            });
+                        }
+                    }).addTo(map);
+                    
+                    loadedChunks++;
+                    console.log(`Loaded chunk ${index + 1}/${totalChunks}`);
+                    
+                    // Auto-fit bounds when all chunks are loaded
+                    if (loadedChunks === totalChunks) {
+                        console.log('All chunks loaded successfully');
+                    }
+                })
+                .catch(error => {
+                    console.error(`Error loading chunk ${index}:`, error);
+                });
+        });
+
+        // Generate legend dynamically
+        function generateLegend() {
+            const legendItems = document.getElementById('legend-items');
+            legendItems.innerHTML = '';
+            
+            Object.entries(colorMap).forEach(([category, color]) => {
+                const item = document.createElement('div');
+                item.className = 'legend-item';
+                item.innerHTML = `
+                    <div class="legend-color" style="background-color: ${color};"></div>
+                    <div class="legend-text">${category}</div>
+                `;
+                legendItems.appendChild(item);
+            });
+        }
+
+        // Initialize legend
+        generateLegend();
+
+        // Optional: Add loading indicator
+        const loadingDiv = document.createElement('div');
+        loadingDiv.id = 'loading';
+        loadingDiv.innerHTML = 'Loading map data...';
+        loadingDiv.style.cssText = 'position: fixed; top: 20px; right: 20px; background: white; padding: 10px; border: 1px solid #ccc; z-index: 1001;';
+        document.body.appendChild(loadingDiv);
+
+        // Hide loading indicator when done
+        let checkLoading = setInterval(() => {
+            if (loadedChunks === totalChunks) {
+                document.getElementById('loading').style.display = 'none';
+                clearInterval(checkLoading);
+            }
+        }, 1000);
+    </script>
+</body>
+</html>
