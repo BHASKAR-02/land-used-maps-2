@@ -5,39 +5,19 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
     <style>
-        #map { 
-            height: 600px; 
-            width: 100%;
-        }
+        #map { height: 600px; width: 100%; }
         .legend { 
-            background: white; 
-            padding: 10px; 
-            border: 2px solid grey; 
-            border-radius: 5px;
-            position: fixed; 
-            bottom: 50px; 
-            left: 50px; 
-            max-height: 400px;
-            overflow-y: auto;
-            z-index: 1000; 
-            font-size: 12px;
-            min-width: 200px;
+            background: white; padding: 10px; border: 2px solid grey; 
+            border-radius: 5px; position: fixed; bottom: 50px; left: 50px; 
+            max-height: 400px; overflow-y: auto; z-index: 1000; 
+            font-size: 12px; min-width: 200px;
         }
-        .legend-item {
-            margin: 2px 0;
-            display: flex;
-            align-items: center;
+        .legend-item { margin: 2px 0; display: flex; align-items: center; }
+        .legend-color { 
+            width: 15px; height: 15px; margin-right: 8px; 
+            border: 1px solid #ccc; flex-shrink: 0;
         }
-        .legend-color {
-            width: 15px;
-            height: 15px;
-            margin-right: 8px;
-            border: 1px solid #ccc;
-            flex-shrink: 0;
-        }
-        .legend-text {
-            word-wrap: break-word;
-        }
+        .legend-text { word-wrap: break-word; }
     </style>
 </head>
 <body>
@@ -67,13 +47,12 @@
             "WaterAreasNotInOtherEconomicUse": "#c7c7c7"
         };
 
-        // Initialize map
-        const map = L.map('map').setView([40.0, -3.0], 12); // Update coordinates
+        // Initialize map with world view - will auto-fit to data
+        const map = L.map('map').setView([0, 0], 2);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '© OpenStreetMap contributors'
         }).addTo(map);
 
-        // Chunk URLs - update with your actual URLs
         const chunkUrls = [
             'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_0.geojson',
        'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_1.geojson',
@@ -167,11 +146,26 @@
        'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_89.geojson'
         ];
 
-        // Style function
+
+        // Track loaded layers for bounds fitting
+        const allLayers = [];
+        let loadedChunks = 0;
+        const totalChunks = chunkUrls.length;
+
+        // Style function - handles missing properties gracefully
         function getStyle(feature) {
-            const category = feature.properties.HILUCS_DESC;
+            // Check multiple possible property names
+            const category = feature.properties.HILUCS_DESC || 
+                           feature.properties.hilucs_desc || 
+                           feature.properties.HILUCS || 
+                           feature.properties.category ||
+                           feature.properties.landuse ||
+                           'Unknown';
+            
+            const color = colorMap[category] || '#999999';
+            
             return {
-                fillColor: colorMap[category] || '#999999',
+                fillColor: color,
                 color: 'black',
                 weight: 0.5,
                 fillOpacity: 0.7,
@@ -179,44 +173,69 @@
             };
         }
 
-        // Load chunks progressively
-        let loadedChunks = 0;
-        const totalChunks = chunkUrls.length;
-
-        chunkUrls.forEach((url, index) => {
-            fetch(url)
+        // Load chunks with proper error handling
+        function loadChunk(url, index) {
+            return fetch(url)
                 .then(response => {
                     if (!response.ok) {
-                        throw new Error(`HTTP error! status: ${response.status}`);
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                     }
                     return response.json();
                 })
                 .then(data => {
-                    L.geoJSON(data, {
-                        style: getStyle,
-                        onEachFeature: function(feature, layer) {
-                            const category = feature.properties.HILUCS_DESC;
-                            layer.bindTooltip(`<b>HILUCS:</b> ${category}`, {
-                                sticky: true,
-                                className: 'custom-tooltip'
-                            });
-                        }
-                    }).addTo(map);
-                    
+                    console.log(`Chunk ${index} loaded:`, {
+                        type: data.type,
+                        features: data.features?.length || 0,
+                        sampleProperties: data.features?.[0]?.properties ? Object.keys(data.features[0].properties) : 'none'
+                    });
+
+                    if (data.features && data.features.length > 0) {
+                        const geoJsonLayer = L.geoJSON(data, {
+                            style: getStyle,
+                            onEachFeature: function(feature, layer) {
+                                // Get category from any available property
+                                const category = feature.properties.HILUCS_DESC || 
+                                               feature.properties.hilucs_desc || 
+                                               feature.properties.HILUCS || 
+                                               feature.properties.category ||
+                                               'Unknown';
+                                
+                                layer.bindTooltip(`<b>Land Use:</b> ${category}`, {
+                                    sticky: true
+                                });
+                            }
+                        });
+
+                        geoJsonLayer.addTo(map);
+                        allLayers.push(geoJsonLayer);
+                        console.log(`Added ${data.features.length} features from chunk ${index}`);
+                    } else {
+                        console.warn(`Chunk ${index} has no features`);
+                    }
+
                     loadedChunks++;
-                    console.log(`Loaded chunk ${index + 1}/${totalChunks}`);
                     
-                    // Auto-fit bounds when all chunks are loaded
-                    if (loadedChunks === totalChunks) {
-                        console.log('All chunks loaded successfully');
+                    // Fit bounds when all chunks are loaded
+                    if (loadedChunks === totalChunks && allLayers.length > 0) {
+                        console.log('All chunks loaded. Fitting map bounds...');
+                        const group = new L.featureGroup(allLayers);
+                        map.fitBounds(group.getBounds(), { padding: [20, 20] });
                     }
                 })
                 .catch(error => {
                     console.error(`Error loading chunk ${index}:`, error);
+                    loadedChunks++;
                 });
+        }
+
+        // Load all chunks
+        console.log(`Starting to load ${totalChunks} chunks...`);
+        chunkUrls.forEach((url, index) => {
+            // Add small delay to prevent overwhelming the server
+            setTimeout(() => loadChunk(url, index), index * 100);
         });
 
-        // Generate legend dynamically
+        // Generate legend
         function generateLegend() {
             const legendItems = document.getElementById('legend-items');
             legendItems.innerHTML = '';
@@ -232,23 +251,10 @@
             });
         }
 
-        // Initialize legend
         generateLegend();
 
-        // Optional: Add loading indicator
-        const loadingDiv = document.createElement('div');
-        loadingDiv.id = 'loading';
-        loadingDiv.innerHTML = 'Loading map data...';
-        loadingDiv.style.cssText = 'position: fixed; top: 20px; right: 20px; background: white; padding: 10px; border: 1px solid #ccc; z-index: 1001;';
-        document.body.appendChild(loadingDiv);
-
-        // Hide loading indicator when done
-        let checkLoading = setInterval(() => {
-            if (loadedChunks === totalChunks) {
-                document.getElementById('loading').style.display = 'none';
-                clearInterval(checkLoading);
-            }
-        }, 1000);
+        // Show loading status
+        console.log('Map initialized. Check console for loading progress.');
     </script>
 </body>
 </html>
