@@ -2,9 +2,9 @@
 <html>
 <head>
     <title>Land Use Map - Madrid</title>
+    <meta charset="UTF-8">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-    <!-- Add Proj4Leaflet for coordinate transformation -->
     <script src="https://unpkg.com/proj4@2.8.0/dist/proj4.js"></script>
     <script src="https://unpkg.com/proj4leaflet@1.0.2/src/proj4leaflet.js"></script>
     <style>
@@ -84,6 +84,7 @@
     <div class="chunk-info" id="chunk-info">Loaded: 0/0 chunks</div>
 
     <script>
+        // Color mapping for different land use categories
         const colorMap = {
             "AbandonedAreas": "#1f77b4",
             "Agriculture": "#aec7e8",
@@ -115,16 +116,15 @@
             maxZoom: 18
         }).addTo(map);
 
-        // Chunk management
+        // Chunk management variables
         const loadedChunks = new Set();
         const chunkLayers = new Map();
         let isLoading = false;
-        let loadQueue = [];
 
         // Generate all chunk URLs
         const chunkUrls = [];
         for (let i = 0; i < 90; i++) {
-            chunkUrls.push(`https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_${i}.geojson`);
+            chunkUrls.push("https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_" + i + ".geojson");
         }
 
         // Transform coordinates function
@@ -132,19 +132,20 @@
             if (coordinates[0] instanceof Array) {
                 return coordinates.map(transformCoordinates);
             } else {
-                const [x, y] = coordinates;
-                const [lng, lat] = proj4("EPSG:25830", "EPSG:4326", [x, y]);
-                return [lng, lat];
+                const x = coordinates[0];
+                const y = coordinates[1];
+                const transformed = proj4("EPSG:25830", "EPSG:4326", [x, y]);
+                return [transformed[0], transformed[1]];
             }
         }
 
-        // Style function
+        // Style function for features
         function getStyle(feature) {
             const category = feature.properties.HILUCS_DESC;
-            const color = colorMap[category] || '#999999';
+            const color = colorMap[category] || "#999999";
             return {
                 fillColor: color,
-                color: 'black',
+                color: "black",
                 weight: 0.5,
                 fillOpacity: 0.7,
                 opacity: 1
@@ -153,8 +154,8 @@
 
         // Update UI indicators
         function updateChunkInfo() {
-            document.getElementById('chunk-info').innerHTML = 
-                `Loaded: ${loadedChunks.size}/${chunkUrls.length} chunks`;
+            const element = document.getElementById('chunk-info');
+            element.innerHTML = "Loaded: " + loadedChunks.size + "/" + chunkUrls.length + " chunks";
         }
 
         function showLoading() {
@@ -165,30 +166,30 @@
             document.getElementById('loading').style.display = 'none';
         }
 
-        // Enhanced load chunk function with detailed logging
+        // Load a single chunk with enhanced error handling
         async function loadChunk(url, index) {
             if (loadedChunks.has(index)) {
-                console.log(`Chunk ${index} already loaded, skipping`);
+                console.log("Chunk " + index + " already loaded, skipping");
                 return;
             }
 
-            console.log(`Attempting to load chunk ${index + 1}/${chunkUrls.length} from: ${url}`);
+            console.log("Attempting to load chunk " + (index + 1) + "/" + chunkUrls.length + " from: " + url);
             
             try {
-                console.log(`Fetching: ${url}`);
+                console.log("Fetching: " + url);
                 const response = await fetch(url);
                 
                 if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    throw new Error("HTTP " + response.status + ": " + response.statusText);
                 }
                 
-                console.log(`Response received for chunk ${index}, status: ${response.status}`);
+                console.log("Response received for chunk " + index + ", status: " + response.status);
                 const data = await response.json();
-                console.log(`Data parsed for chunk ${index}, features: ${data.features?.length || 0}`);
+                console.log("Data parsed for chunk " + index + ", features: " + (data.features ? data.features.length : 0));
                 
                 if (data.features && data.features.length > 0) {
                     // Transform coordinates for each feature
-                    data.features.forEach(feature => {
+                    data.features.forEach(function(feature) {
                         if (feature.geometry && feature.geometry.coordinates) {
                             if (feature.geometry.type === 'Polygon') {
                                 feature.geometry.coordinates = transformCoordinates(feature.geometry.coordinates);
@@ -202,7 +203,7 @@
                         style: getStyle,
                         onEachFeature: function(feature, layer) {
                             const category = feature.properties.HILUCS_DESC || 'Unknown';
-                            layer.bindTooltip(`<b>HILUCS:</b> ${category}`, {
+                            layer.bindTooltip("<b>HILUCS:</b> " + category, {
                                 sticky: true,
                                 direction: 'top'
                             });
@@ -213,21 +214,25 @@
                     chunkLayers.set(index, geoJsonLayer);
                     loadedChunks.add(index);
                     
-                    console.log('Chunk ${index + 1} loaded successfully: ${data.features.length} features`);
+                    console.log("✅ Chunk " + (index + 1) + " loaded successfully: " + data.features.length + " features");
                 } else {
-                    console.log(`Chunk ${index + 1} has no features`);
+                    console.log("⚠️ Chunk " + (index + 1) + " has no features");
                 }
             } catch (error) {
-                console.error(`Error loading chunk ${index + 1}:`, error);
-                console.error(`URL: ${url}`);
-                console.error(`Error details:`, error.message);
+                console.error("❌ Error loading chunk " + (index + 1) + ":", error);
+                console.error("URL: " + url);
+                console.error("Error details:", error.message);
             }
             
             updateChunkInfo();
         }
 
-        // Enhanced batch loading with better error handling
-        async function loadChunksBatch(chunkIndices, batchSize = 3) {
+        // Load chunks in batches
+        async function loadChunksBatch(chunkIndices, batchSize) {
+            if (typeof batchSize === 'undefined') {
+                batchSize = 3;
+            }
+            
             if (isLoading) {
                 console.log("Already loading, skipping batch");
                 return;
@@ -236,102 +241,104 @@
             isLoading = true;
             showLoading();
             
-            console.log(`Loading batch of ${chunkIndices.length} chunks`);
+            console.log("Loading batch of " + chunkIndices.length + " chunks");
             
-            // Process in batches to avoid overwhelming the browser
+            // Process in batches
             for (let i = 0; i < chunkIndices.length; i += batchSize) {
                 const batch = chunkIndices.slice(i, i + batchSize);
-                console.log(`Processing batch ${Math.floor(i/batchSize) + 1}, indices:`, batch);
+                console.log("Processing batch " + (Math.floor(i/batchSize) + 1) + ", indices:", batch);
                 
-                const promises = batch
-                    .filter(index => !loadedChunks.has(index))
-                    .map(index => {
-                        console.log(`Creating promise for chunk ${index}`);
-                        return loadChunk(chunkUrls[index], index);
-                    });
-                
-                if (promises.length > 0) {
-                    console.log(`Executing ${promises.length} promises`);
-                    await Promise.allSettled(promises); // Use allSettled instead of all
+                const promises = [];
+                for (let j = 0; j < batch.length; j++) {
+                    const index = batch[j];
+                    if (!loadedChunks.has(index)) {
+                        console.log("Creating promise for chunk " + index);
+                        promises.push(loadChunk(chunkUrls[index], index));
+                    }
                 }
                 
-                // Small delay between batches to keep UI responsive
-                await new Promise(resolve => setTimeout(resolve, 200));
+                if (promises.length > 0) {
+                    console.log("Executing " + promises.length + " promises");
+                    await Promise.allSettled(promises);
+                }
+                
+                // Small delay between batches
+                await new Promise(function(resolve) {
+                    setTimeout(resolve, 200);
+                });
             }
             
             isLoading = false;
             hideLoading();
-            console.log(`Batch loading complete. Total loaded: ${loadedChunks.size}`);
+            console.log("Batch loading complete. Total loaded: " + loadedChunks.size);
         }
 
-        // Test chunk URLs for accessibility
+        // Test if chunk URLs are accessible
         async function testChunkUrls() {
             console.log("Testing first few chunk URLs...");
             
-            for (let i = 0; i < Math.min(3, chunkUrls.length); i++) {
+            const testCount = Math.min(3, chunkUrls.length);
+            for (let i = 0; i < testCount; i++) {
                 const url = chunkUrls[i];
                 try {
-                    console.log(`Testing URL: ${url}`);
+                    console.log("Testing URL: " + url);
                     const response = await fetch(url, { method: 'HEAD' });
-                    console.log(`URL ${i}: ${response.status} ${response.statusText}`);
+                    console.log("URL " + i + ": " + response.status + " " + response.statusText);
                 } catch (error) {
-                    console.error(`URL ${i} failed:`, error.message);
+                    console.error("URL " + i + " failed:", error.message);
                 }
             }
         }
 
-        // Manual URL test function
+        // Manual URL test
         function manualUrlTest() {
             const testUrl = "https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_0.geojson";
             console.log("Manual URL test:", testUrl);
             
             fetch(testUrl)
-                .then(response => {
+                .then(function(response) {
                     console.log("Manual test response:", response.status, response.statusText);
                     return response.text();
                 })
-                .then(text => {
+                .then(function(text) {
                     console.log("Manual test response text length:", text.length);
                     console.log("First 200 characters:", text.substring(0, 200));
                     try {
                         JSON.parse(text);
-                        console.log("JSON is valid");
+                        console.log("✅ JSON is valid");
                     } catch (e) {
-                        console.error("JSON is invalid:", e.message);
+                        console.error("❌ JSON is invalid:", e.message);
                     }
                 })
-                .catch(error => {
+                .catch(function(error) {
                     console.error("Manual test error:", error);
                 });
         }
 
-        // Determine which chunks to load based on map view and zoom
+        // Get relevant chunks based on zoom level
         function getRelevantChunks() {
             const zoom = map.getZoom();
-            const bounds = map.getBounds();
             
-            // Load more chunks at higher zoom levels
             let chunksToLoad;
             if (zoom >= 12) {
-                // High zoom: load chunks that intersect current view
-                chunksToLoad = getChunksInBounds(bounds);
+                const totalChunks = Math.min(40, chunkUrls.length);
+                chunksToLoad = [];
+                for (let i = 0; i < totalChunks; i++) {
+                    chunksToLoad.push(i);
+                }
             } else if (zoom >= 10) {
-                // Medium zoom: load subset of chunks
-                chunksToLoad = Array.from({length: 30}, (_, i) => i);
+                chunksToLoad = [];
+                for (let i = 0; i < 30; i++) {
+                    chunksToLoad.push(i);
+                }
             } else {
-                // Low zoom: load only a few representative chunks
-                chunksToLoad = Array.from({length: 10}, (_, i) => i * 9);
+                chunksToLoad = [];
+                for (let i = 0; i < 10; i++) {
+                    chunksToLoad.push(i * 9);
+                }
             }
             
             return chunksToLoad;
-        }
-
-        // Simplified bounds checking
-        function getChunksInBounds(bounds) {
-            // Since we don't know exact chunk bounds, load progressively
-            const totalChunks = chunkUrls.length;
-            const maxChunks = Math.min(40, totalChunks);
-            return Array.from({length: maxChunks}, (_, i) => i);
         }
 
         // Load initial chunks
@@ -341,10 +348,12 @@
             loadChunksBatch(initialChunks);
         }
 
-        // Event listeners for dynamic loading
+        // Map event listeners
         map.on('zoomend', function() {
             const newChunks = getRelevantChunks();
-            const unloadedChunks = newChunks.filter(i => !loadedChunks.has(i));
+            const unloadedChunks = newChunks.filter(function(i) {
+                return !loadedChunks.has(i);
+            });
             
             if (unloadedChunks.length > 0) {
                 console.log("Zoom changed, loading new chunks:", unloadedChunks);
@@ -354,13 +363,15 @@
 
         map.on('moveend', function() {
             const zoom = map.getZoom();
-            if (zoom >= 11) { // Only load on move at higher zoom levels
+            if (zoom >= 11) {
                 const newChunks = getRelevantChunks();
-                const unloadedChunks = newChunks.filter(i => !loadedChunks.has(i));
+                const unloadedChunks = newChunks.filter(function(i) {
+                    return !loadedChunks.has(i);
+                });
                 
                 if (unloadedChunks.length > 0 && unloadedChunks.length <= 10) {
                     console.log("Map moved, loading new chunks:", unloadedChunks);
-                    loadChunksBatch(unloadedChunks, 2); // Smaller batches for move events
+                    loadChunksBatch(unloadedChunks, 2);
                 }
             }
         });
@@ -368,44 +379,56 @@
         // Generate legend
         function generateLegend() {
             const legendItems = document.getElementById('legend-items');
-            Object.entries(colorMap).forEach(([category, color]) => {
+            const entries = Object.entries(colorMap);
+            
+            for (let i = 0; i < entries.length; i++) {
+                const category = entries[i][0];
+                const color = entries[i][1];
+                
                 const item = document.createElement('div');
                 item.className = 'legend-item';
-                item.innerHTML = `
-                    <div class="legend-color" style="background-color: ${color};"></div>
-                    <div class="legend-text">${category}</div>
-                `;
+                
+                const colorDiv = document.createElement('div');
+                colorDiv.className = 'legend-color';
+                colorDiv.style.backgroundColor = color;
+                
+                const textDiv = document.createElement('div');
+                textDiv.className = 'legend-text';
+                textDiv.textContent = category;
+                
+                item.appendChild(colorDiv);
+                item.appendChild(textDiv);
                 legendItems.appendChild(item);
-            });
+            }
         }
 
         // Initialize everything
         console.log('Map initialized. Dynamic chunk loading enabled.');
-        console.log(`Total chunks available: ${chunkUrls.length}`);
+        console.log('Total chunks available: ' + chunkUrls.length);
         
         generateLegend();
         updateChunkInfo();
 
-        // Call manual URL test immediately
+        // Start the loading process
         manualUrlTest();
 
-        // Test URLs first, then load chunks
-        setTimeout(async () => {
-            await testChunkUrls();
-            
-            // Try loading just the first chunk to test
-            console.log("Testing single chunk load...");
-            await loadChunk(chunkUrls[0], 0);
-            
-            // If successful, load more
-            if (loadedChunks.size > 0) {
-                console.log("Single chunk test successful, loading more...");
+        setTimeout(function() {
+            testChunkUrls().then(function() {
+                console.log("Testing single chunk load...");
+                return loadChunk(chunkUrls[0], 0);
+            }).then(function() {
+                if (loadedChunks.size > 0) {
+                    console.log("Single chunk test successful, loading more...");
+                    loadInitialChunks();
+                } else {
+                    console.error("Single chunk test failed, check URLs and CORS policy");
+                    console.log("Attempting to load initial chunks anyway...");
+                    loadInitialChunks();
+                }
+            }).catch(function(error) {
+                console.error("Error in initialization:", error);
                 loadInitialChunks();
-            } else {
-                console.error("Single chunk test failed, check URLs and CORS policy");
-                console.log("Attempting to load initial chunks anyway...");
-                loadInitialChunks();
-            }
+            });
         }, 1000);
     </script>
 </body>
