@@ -26,17 +26,57 @@
             position: fixed; 
             bottom: 20px; 
             left: 20px; 
-            max-height: 50vh;
+            max-height: 60vh;
             overflow-y: auto; 
             z-index: 1000; 
             font-size: 13px;
-            min-width: 220px;
+            min-width: 280px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+        .legend-header {
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 8px;
+        }
+        .legend-controls {
+            display: flex;
+            gap: 8px;
+        }
+        .legend-btn {
+            background: #f0f0f0;
+            border: 1px solid #ccc;
+            padding: 4px 8px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 11px;
+            transition: background-color 0.2s;
+        }
+        .legend-btn:hover {
+            background: #e0e0e0;
         }
         .legend-item { 
             margin: 3px 0; 
             display: flex; 
-            align-items: center; 
+            align-items: center;
+            cursor: pointer;
+            padding: 2px;
+            border-radius: 3px;
+            transition: background-color 0.2s;
+        }
+        .legend-item:hover {
+            background-color: #f5f5f5;
+        }
+        .legend-item.disabled {
+            opacity: 0.5;
+        }
+        .legend-checkbox {
+            width: 16px;
+            height: 16px;
+            margin-right: 8px;
+            cursor: pointer;
         }
         .legend-color { 
             width: 16px; 
@@ -48,6 +88,7 @@
         .legend-text { 
             word-wrap: break-word; 
             line-height: 1.3;
+            flex-grow: 1;
         }
         .loading-indicator {
             position: fixed;
@@ -77,7 +118,13 @@
 <body>
     <div id="map"></div>
     <div class="legend">
-        <b>HILUCS Categories</b>
+        <div class="legend-header">
+            <b>HILUCS Categories</b>
+            <div class="legend-controls">
+                <div class="legend-btn" onclick="toggleAllCategories(true)">Show All</div>
+                <div class="legend-btn" onclick="toggleAllCategories(false)">Hide All</div>
+            </div>
+        </div>
         <div id="legend-items"></div>
     </div>
     <div class="loading-indicator" id="loading">Loading chunks...</div>
@@ -103,6 +150,13 @@
             "Utilities": "#7f7f7f",
             "WaterAreasNotInOtherEconomicUse": "#c7c7c7"
         };
+
+        // Category visibility state
+        const categoryVisibility = {};
+        // Initialize all categories as visible
+        Object.keys(colorMap).forEach(function(category) {
+            categoryVisibility[category] = true;
+        });
 
         // Define coordinate transformation (UTM Zone 30N to WGS84)
         proj4.defs("EPSG:25830", "+proj=utm +zone=30 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs");
@@ -143,12 +197,16 @@
         function getStyle(feature) {
             const category = feature.properties.HILUCS_DESC;
             const color = colorMap[category] || "#999999";
+            
+            // Check if category should be visible
+            const isVisible = categoryVisibility[category] !== false;
+            
             return {
                 fillColor: color,
                 color: "black",
                 weight: 0.5,
-                fillOpacity: 0.7,
-                opacity: 1
+                fillOpacity: isVisible ? 0.7 : 0,
+                opacity: isVisible ? 1 : 0
             };
         }
 
@@ -164,6 +222,48 @@
 
         function hideLoading() {
             document.getElementById('loading').style.display = 'none';
+        }
+
+        // Toggle category visibility
+        function toggleCategory(category) {
+            categoryVisibility[category] = !categoryVisibility[category];
+            updateLayerStyles();
+            updateLegendCheckboxes();
+        }
+
+        // Toggle all categories
+        function toggleAllCategories(visible) {
+            Object.keys(colorMap).forEach(function(category) {
+                categoryVisibility[category] = visible;
+            });
+            updateLayerStyles();
+            updateLegendCheckboxes();
+        }
+
+        // Update layer styles based on visibility
+        function updateLayerStyles() {
+            chunkLayers.forEach(function(layer, index) {
+                layer.eachLayer(function(featureLayer) {
+                    const newStyle = getStyle(featureLayer.feature);
+                    featureLayer.setStyle(newStyle);
+                });
+            });
+        }
+
+        // Update legend checkboxes
+        function updateLegendCheckboxes() {
+            Object.keys(colorMap).forEach(function(category) {
+                const checkbox = document.getElementById('checkbox-' + category);
+                const legendItem = document.getElementById('item-' + category);
+                if (checkbox && legendItem) {
+                    checkbox.checked = categoryVisibility[category];
+                    if (categoryVisibility[category]) {
+                        legendItem.classList.remove('disabled');
+                    } else {
+                        legendItem.classList.add('disabled');
+                    }
+                }
+            });
         }
 
         // Load a single chunk with enhanced error handling
@@ -376,7 +476,7 @@
             }
         });
 
-        // Generate legend
+        // Generate legend with toggle functionality
         function generateLegend() {
             const legendItems = document.getElementById('legend-items');
             const entries = Object.entries(colorMap);
@@ -387,6 +487,15 @@
                 
                 const item = document.createElement('div');
                 item.className = 'legend-item';
+                item.id = 'item-' + category;
+                item.onclick = function() { toggleCategory(category); };
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'legend-checkbox';
+                checkbox.id = 'checkbox-' + category;
+                checkbox.checked = true;
+                checkbox.onchange = function() { toggleCategory(category); };
                 
                 const colorDiv = document.createElement('div');
                 colorDiv.className = 'legend-color';
@@ -396,6 +505,7 @@
                 textDiv.className = 'legend-text';
                 textDiv.textContent = category;
                 
+                item.appendChild(checkbox);
                 item.appendChild(colorDiv);
                 item.appendChild(textDiv);
                 legendItems.appendChild(item);
