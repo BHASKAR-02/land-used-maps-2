@@ -4,6 +4,9 @@
     <title>Land Use Map</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <!-- Add Proj4Leaflet for coordinate transformation -->
+    <script src="https://unpkg.com/proj4@2.8.0/dist/proj4.js"></script>
+    <script src="https://unpkg.com/proj4leaflet@1.0.2/src/proj4leaflet.js"></script>
     <style>
         #map { height: 600px; width: 100%; }
         .legend { 
@@ -47,11 +50,27 @@
             "WaterAreasNotInOtherEconomicUse": "#c7c7c7"
         };
 
-        // Initialize map with world view - will auto-fit to data
-        const map = L.map('map').setView([0, 0], 2);
+        // Define coordinate transformation (UTM Zone 30N to WGS84)
+        proj4.defs("EPSG:25830", "+proj=utm +zone=30 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs");
+
+        // Initialize map
+        const map = L.map('map').setView([40.0, -3.0], 6);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '© OpenStreetMap contributors'
         }).addTo(map);
+
+        // Transform coordinates function
+        function transformCoordinates(coordinates) {
+            if (coordinates[0] instanceof Array) {
+                // Handle nested arrays (Polygon/MultiPolygon)
+                return coordinates.map(transformCoordinates);
+            } else {
+                // Transform single coordinate pair [x, y] to [lng, lat]
+                const [x, y] = coordinates;
+                const [lng, lat] = proj4("EPSG:25830", "EPSG:4326", [x, y]);
+                return [lng, lat];
+            }
+        }
 
         const chunkUrls = [
             'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_0.geojson',
@@ -146,24 +165,13 @@
        'https://bhaskar-02.github.io/land-used-maps-2/land_use_chunk_89.geojson'
         ];
 
-
-        // Track loaded layers for bounds fitting
         const allLayers = [];
         let loadedChunks = 0;
-        const totalChunks = chunkUrls.length;
 
-        // Style function - handles missing properties gracefully
+        // Style function
         function getStyle(feature) {
-            // Check multiple possible property names
-            const category = feature.properties.HILUCS_DESC || 
-                           feature.properties.hilucs_desc || 
-                           feature.properties.HILUCS || 
-                           feature.properties.category ||
-                           feature.properties.landuse ||
-                           'Unknown';
-            
+            const category = feature.properties.HILUCS_DESC;
             const color = colorMap[category] || '#999999';
-            
             return {
                 fillColor: color,
                 color: 'black',
@@ -173,51 +181,37 @@
             };
         }
 
-        // Load chunks with proper error handling
-        function loadChunk(url, index) {
-            return fetch(url)
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                    }
-                    return response.json();
-                })
+        chunkUrls.forEach((url, index) => {
+            fetch(url)
+                .then(response => response.json())
                 .then(data => {
-                    console.log(`Chunk ${index} loaded:`, {
-                        type: data.type,
-                        features: data.features?.length || 0,
-                        sampleProperties: data.features?.[0]?.properties ? Object.keys(data.features[0].properties) : 'none'
+                    console.log(`Chunk ${index + 1}/${chunkUrls.length} loaded with ${data.features.length} features`);
+                    
+                    // Transform coordinates for each feature
+                    data.features.forEach(feature => {
+                        if (feature.geometry.type === 'Polygon') {
+                            feature.geometry.coordinates = transformCoordinates(feature.geometry.coordinates);
+                        } else if (feature.geometry.type === 'MultiPolygon') {
+                            feature.geometry.coordinates = transformCoordinates(feature.geometry.coordinates);
+                        }
                     });
 
-                    if (data.features && data.features.length > 0) {
-                        const geoJsonLayer = L.geoJSON(data, {
-                            style: getStyle,
-                            onEachFeature: function(feature, layer) {
-                                // Get category from any available property
-                                const category = feature.properties.HILUCS_DESC || 
-                                               feature.properties.hilucs_desc || 
-                                               feature.properties.HILUCS || 
-                                               feature.properties.category ||
-                                               'Unknown';
-                                
-                                layer.bindTooltip(`<b>Land Use:</b> ${category}`, {
-                                    sticky: true
-                                });
-                            }
-                        });
+                    const geoJsonLayer = L.geoJSON(data, {
+                        style: getStyle,
+                        onEachFeature: function(feature, layer) {
+                            const category = feature.properties.HILUCS_DESC;
+                            layer.bindTooltip(`<b>HILUCS:</b> ${category}`);
+                        }
+                    });
 
-                        geoJsonLayer.addTo(map);
-                        allLayers.push(geoJsonLayer);
-                        console.log(`Added ${data.features.length} features from chunk ${index}`);
-                    } else {
-                        console.warn(`Chunk ${index} has no features`);
-                    }
-
+                    geoJsonLayer.addTo(map);
+                    allLayers.push(geoJsonLayer);
+                    
                     loadedChunks++;
                     
-                    // Fit bounds when all chunks are loaded
-                    if (loadedChunks === totalChunks && allLayers.length > 0) {
-                        console.log('All chunks loaded. Fitting map bounds...');
+                    // Fit bounds when all chunks loaded
+                    if (loadedChunks === chunkUrls.length) {
+                        console.log('All chunks loaded! Fitting bounds...');
                         const group = new L.featureGroup(allLayers);
                         map.fitBounds(group.getBounds(), { padding: [20, 20] });
                     }
@@ -226,20 +220,11 @@
                     console.error(`Error loading chunk ${index}:`, error);
                     loadedChunks++;
                 });
-        }
-
-        // Load all chunks
-        console.log(`Starting to load ${totalChunks} chunks...`);
-        chunkUrls.forEach((url, index) => {
-            // Add small delay to prevent overwhelming the server
-            setTimeout(() => loadChunk(url, index), index * 100);
         });
 
         // Generate legend
         function generateLegend() {
             const legendItems = document.getElementById('legend-items');
-            legendItems.innerHTML = '';
-            
             Object.entries(colorMap).forEach(([category, color]) => {
                 const item = document.createElement('div');
                 item.className = 'legend-item';
@@ -252,9 +237,6 @@
         }
 
         generateLegend();
-
-        // Show loading status
-        console.log('Map initialized. Check console for loading progress.');
     </script>
 </body>
 </html>
